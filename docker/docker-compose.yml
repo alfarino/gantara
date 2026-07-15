@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # 1. Container Database PostgreSQL
+  gantara-db:
+    image: postgres:15-alpine
+    container_name: gantara-db-container
+    restart: always
+    environment:
+      POSTGRES_USER: gantara_user
+      POSTGRES_PASSWORD: gantara_password_super_secure_99
+      POSTGRES_DB: gantara_prod
+    volumes:
+      - gantara-db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - gantara-network
+
+  # 2. Container Aplikasi Web Next.js
+  gantara-app:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    container_name: gantara-app-container
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://gantara_user:gantara_password_super_secure_99@gantara-db:5432/gantara_prod?schema=public
+      - DIRECT_URL=postgresql://gantara_user:gantara_password_super_secure_99@gantara-db:5432/gantara_prod?schema=public
+      - JWT_SECRET=random-super-secret-key-32-chars-long-or-more
+      - JWT_EXPIRES_IN=24h
+      - JWT_REMEMBER_EXPIRES_IN=30d
+      - STORAGE_PROVIDER=local
+      - STORAGE_LOCAL_PATH=/app/public/uploads
+    depends_on:
+      - gantara-db
+    volumes:
+      - gantara-uploads:/app/public/uploads
+    networks:
+      - gantara-network
+
+volumes:
+  gantara-db-data:
+    driver: local
+  gantara-uploads:
+    driver: local
+
+networks:
+  gantara-network:
+    driver: bridge

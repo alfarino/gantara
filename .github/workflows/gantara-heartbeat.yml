@@ -1,0 +1,14 @@
+name: Gantara DB Heartbeat
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Berjalan setiap hari pada jam 12 malam UTC
+
+jobs:
+  ping-db:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping PostgreSQL
+        run: |
+          sudo apt-get install -y postgresql-client
+          psql "${{ secrets.DIRECT_URL }}" -c "SELECT 1;"
