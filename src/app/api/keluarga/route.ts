@@ -69,17 +69,19 @@ export async function GET(request: Request) {
 
     const skip = (page - 1) * limit;
 
-    const total = await prisma.kartuKeluarga.count({ where: whereClause });
-    const items = await prisma.kartuKeluarga.findMany({
-      where: whereClause,
-      include: {
-        posko: { select: { id: true, nama: true } },
-        anggota: { select: { id: true } }
-      },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: limit
-    });
+    const [total, items] = await Promise.all([
+      prisma.kartuKeluarga.count({ where: whereClause }),
+      prisma.kartuKeluarga.findMany({
+        where: whereClause,
+        include: {
+          posko: { select: { id: true, nama: true } },
+          _count: { select: { anggota: true } }
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit
+      })
+    ]);
 
     const mappedItems = items.map(item => ({
       id: item.id,
@@ -87,7 +89,7 @@ export async function GET(request: Request) {
       nama_kepala_keluarga: item.namaKepalaKeluarga,
       nik_kepala_keluarga: maskNik(item.nikKepalaKeluarga, user.role),
       kelurahan: item.kelurahan,
-      jumlah_anggota: item.anggota.length,
+      jumlah_anggota: item._count.anggota,
       zona_risiko: item.zonaRisiko,
       status_verifikasi: item.statusVerifikasi,
       posko: item.posko ? { id: item.posko.id, nama: item.posko.nama } : null,
@@ -174,7 +176,8 @@ export async function POST(request: Request) {
             jenisKelamin: member.jenis_kelamin,
             tanggalLahir: new Date(member.tanggal_lahir),
             kategoriRentan: member.kategori_rentan || null,
-            kondisiKesehatan: member.kondisi_kesehatan || null
+            statusKesehatan: member.status_kesehatan || member.statusKesehatan || 'SEHAT',
+            kondisiKesehatan: member.kondisi_kesehatan || member.kondisiKesehatan || null
           }))
         });
       }

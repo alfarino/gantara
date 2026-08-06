@@ -17,6 +17,7 @@ interface Member {
   jenis_kelamin: string;
   tanggal_lahir: string;
   kategori_rentan: string;
+  status_kesehatan?: string;
   kondisi_kesehatan: string;
 }
 

@@ -40,6 +40,7 @@ export async function GET(request: Request, { params }: RouteParams) {
             jenisKelamin: true,
             tanggalLahir: true,
             kategoriRentan: true,
+            statusKesehatan: true,
             kondisiKesehatan: true,
           },
           orderBy: { createdAt: 'asc' },

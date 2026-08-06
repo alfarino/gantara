@@ -31,10 +31,6 @@ export async function GET() {
     todayStart.setHours(0, 0, 0, 0);
     distributionWhere.tanggalDistribusi = { gte: todayStart };
 
-    const totalKkTerdampak = await prisma.kartuKeluarga.count({ where: kkWhere });
-    const distribusiHariIni = await prisma.distribusiBantuan.count({ where: distributionWhere });
-    const relawanAktif = await prisma.user.count({ where: relawanWhere });
-
     const past24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
     let logWhere: any = {
       tipe: 'SCAN_QR',
@@ -43,7 +39,13 @@ export async function GET() {
     if (user.role !== 'SUPER_ADMIN') {
       logWhere.user = { poskoId: user.poskoId };
     }
-    const qrScan24Jam = await prisma.logAktivitas.count({ where: logWhere });
+
+    const [totalKkTerdampak, distribusiHariIni, relawanAktif, qrScan24Jam] = await Promise.all([
+      prisma.kartuKeluarga.count({ where: kkWhere }),
+      prisma.distribusiBantuan.count({ where: distributionWhere }),
+      prisma.user.count({ where: relawanWhere }),
+      prisma.logAktivitas.count({ where: logWhere }),
+    ]);
 
     return NextResponse.json({
       success: true,

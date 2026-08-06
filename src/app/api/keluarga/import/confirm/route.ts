@@ -60,48 +60,47 @@ export async function POST(request: Request) {
       }
     }
 
-    // Use transaction to insert all valid rows
+    // Build batch insert payload
+    const recordsToInsert = validRows.map((row) => {
+      const randomSuffix = Math.random().toString(36).substring(2, 10).toUpperCase();
+      const qrCodeData = `PG-2026-${randomSuffix}`;
+
+      return {
+        nomorKk: row.nomor_kk,
+        namaKepalaKeluarga: row.nama,
+        nikKepalaKeluarga: row.nik,
+        alamat: row.alamat,
+        rt: row.rt,
+        rw: row.rw,
+        kelurahan: row.kelurahan,
+        kecamatan: row.kecamatan,
+        kabupaten: row.kabupaten,
+        zonaRisiko: row.zona_risiko as any,
+        statusHunian: row.status_hunian as any,
+        qrCodeData,
+        eventBencanaId: targetEventId,
+        poskoId: targetPoskoId,
+        createdById: user.id,
+      };
+    });
+
+    // Use transaction to insert all valid rows in a single batch query
     const result = await prisma.$transaction(async (tx) => {
-      let insertedCount = 0;
-
-      for (const row of validRows) {
-        const randomSuffix = Math.random().toString(36).substring(2, 10).toUpperCase();
-        const qrCodeData = `PG-2026-${randomSuffix}`;
-
-        await tx.kartuKeluarga.create({
-          data: {
-            nomorKk: row.nomor_kk,
-            namaKepalaKeluarga: row.nama,
-            nikKepalaKeluarga: row.nik,
-            alamat: row.alamat,
-            rt: row.rt,
-            rw: row.rw,
-            kelurahan: row.kelurahan,
-            kecamatan: row.kecamatan,
-            kabupaten: row.kabupaten,
-            zonaRisiko: row.zona_risiko as any,
-            statusHunian: row.status_hunian as any,
-            qrCodeData,
-            eventBencanaId: targetEventId,
-            poskoId: targetPoskoId,
-            createdById: user.id,
-          },
-        });
-
-        insertedCount++;
-      }
+      const batchResult = await tx.kartuKeluarga.createMany({
+        data: recordsToInsert,
+      });
 
       // Log the import activity
       await tx.logAktivitas.create({
         data: {
           userId: user.id,
           tipe: 'VERIFIKASI',
-          deskripsi: `Import massal ${insertedCount} Kartu Keluarga dari file Excel`,
+          deskripsi: `Import massal ${batchResult.count} Kartu Keluarga dari file Excel`,
           referensiTipe: 'KARTU_KELUARGA',
         },
       });
 
-      return insertedCount;
+      return batchResult.count;
     });
 
     // Clean up session after successful commit

@@ -89,6 +89,8 @@ export async function POST(
       tanggalLahir,
       kategori_rentan,
       kategoriRentan,
+      status_kesehatan,
+      statusKesehatan,
       kondisi_kesehatan,
       kondisiKesehatan
     } = body;
@@ -99,6 +101,7 @@ export async function POST(
     const memberGender = jenisKelamin || jenis_kelamin;
     const memberDob = tanggalLahir || tanggal_lahir;
     const memberRentan = kategoriRentan !== undefined ? kategoriRentan : kategori_rentan;
+    const memberStatus = statusKesehatan || status_kesehatan || 'SEHAT';
     const memberHealth = kondisiKesehatan !== undefined ? kondisiKesehatan : kondisi_kesehatan;
 
     const newMember = await prisma.$transaction(async (tx) => {
@@ -111,6 +114,7 @@ export async function POST(
           jenisKelamin: memberGender,
           tanggalLahir: new Date(memberDob),
           kategoriRentan: memberRentan || null,
+          statusKesehatan: memberStatus as any,
           kondisiKesehatan: memberHealth || null
         }
       });

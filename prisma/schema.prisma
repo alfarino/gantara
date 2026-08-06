@@ -1,13 +1,174 @@
-datasource db {
-  provider  = "postgresql"
-}
-
-
 generator client {
   provider = "prisma-client-js"
 }
 
-// === ENUMS ===
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String              @id @default(uuid())
+  email        String              @unique @db.VarChar(255)
+  passwordHash String              @map("password_hash") @db.VarChar(255)
+  namaLengkap  String              @map("nama_lengkap") @db.VarChar(255)
+  role         Role
+  status       StatusUser          @default(AKTIF)
+  poskoId      String?             @map("posko_id")
+  fotoUrl      String?             @map("foto_url")
+  idRelawan    String?             @unique @map("id_relawan") @db.VarChar(20)
+  keahlian     String?             @db.VarChar(255)
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+  distribusi   DistribusiBantuan[]
+  keluarga     KartuKeluarga[]     @relation("CreatedBy")
+  logAktivitas LogAktivitas[]
+  posko        Posko?              @relation(fields: [poskoId], references: [id])
+
+  @@map("users")
+}
+
+model EventBencana {
+  id             String          @id @default(uuid())
+  nama           String          @db.VarChar(255)
+  tipe           TipeBencana
+  status         StatusBencana
+  lokasi         String          @db.VarChar(500)
+  tanggalMulai   DateTime        @map("tanggal_mulai")
+  tanggalSelesai DateTime?       @map("tanggal_selesai")
+  deskripsi      String?
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  keluarga       KartuKeluarga[]
+  posko          Posko[]
+
+  @@map("event_bencana")
+}
+
+model Posko {
+  id              String              @id @default(uuid())
+  nama            String              @db.VarChar(255)
+  tipe            TipePosko
+  alamat          String
+  eventBencanaId  String              @map("event_bencana_id")
+  jumlahPengungsi Int                 @default(0) @map("jumlah_pengungsi")
+  status          StatusPosko
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+  distribusi      DistribusiBantuan[]
+  inventori       InventoriLogistik[]
+  keluarga        KartuKeluarga[]
+  eventBencana    EventBencana        @relation(fields: [eventBencanaId], references: [id], onDelete: Cascade)
+  users           User[]
+
+  @@map("posko")
+}
+
+model KartuKeluarga {
+  id                 String              @id @default(uuid())
+  nomorKk            String              @unique @map("nomor_kk") @db.VarChar(16)
+  namaKepalaKeluarga String              @map("nama_kepala_keluarga") @db.VarChar(255)
+  nikKepalaKeluarga  String              @unique @map("nik_kepala_keluarga") @db.VarChar(16)
+  alamat             String
+  rt                 String              @db.VarChar(5)
+  rw                 String              @db.VarChar(5)
+  kelurahan          String              @db.VarChar(100)
+  kecamatan          String              @db.VarChar(100)
+  kabupaten          String              @db.VarChar(100)
+  zonaRisiko         ZonaRisiko          @map("zona_risiko")
+  statusHunian       StatusHunian        @map("status_hunian")
+  statusVerifikasi   StatusVerifikasi    @default(MENUNGGU) @map("status_verifikasi")
+  qrCodeData         String              @unique @map("qr_code_data") @db.VarChar(50)
+  poskoId            String?             @map("posko_id")
+  eventBencanaId     String              @map("event_bencana_id")
+  createdById        String              @map("created_by_id")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  anggota            AnggotaKeluarga[]
+  distribusi         DistribusiBantuan[]
+  createdBy          User                @relation("CreatedBy", fields: [createdById], references: [id])
+  eventBencana       EventBencana        @relation(fields: [eventBencanaId], references: [id], onDelete: Cascade)
+  posko              Posko?              @relation(fields: [poskoId], references: [id])
+
+  @@index([poskoId])
+  @@index([eventBencanaId])
+  @@index([kelurahan])
+  @@index([statusVerifikasi])
+  @@index([createdAt])
+  @@map("kartu_keluarga")
+}
+
+model AnggotaKeluarga {
+  id               String           @id @default(uuid())
+  kartuKeluargaId  String           @map("kartu_keluarga_id")
+  nik              String           @db.VarChar(16)
+  nama             String           @db.VarChar(255)
+  hubungan         HubunganKeluarga
+  jenisKelamin     JenisKelamin     @map("jenis_kelamin")
+  tanggalLahir     DateTime         @map("tanggal_lahir") @db.Date
+  kategoriRentan   KategoriRentan?  @map("kategori_rentan")
+  statusKesehatan  StatusKesehatan  @default(SEHAT) @map("status_kesehatan")
+  kondisiKesehatan String?          @map("kondisi_kesehatan")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  kartuKeluarga    KartuKeluarga    @relation(fields: [kartuKeluargaId], references: [id], onDelete: Cascade)
+
+  @@index([kartuKeluargaId])
+  @@index([statusKesehatan])
+  @@map("anggota_keluarga")
+}
+
+model DistribusiBantuan {
+  id                String           @id @default(uuid())
+  kartuKeluargaId   String           @map("kartu_keluarga_id")
+  poskoId           String           @map("posko_id")
+  jenisBantuan      String           @map("jenis_bantuan") @db.VarChar(255)
+  kuantitas         String           @db.VarChar(50)
+  status            StatusDistribusi @default(TERSALURKAN)
+  petugasId         String           @map("petugas_id")
+  catatan           String?
+  tanggalDistribusi DateTime         @default(now()) @map("tanggal_distribusi")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  kartuKeluarga     KartuKeluarga    @relation(fields: [kartuKeluargaId], references: [id], onDelete: Cascade)
+  petugas           User             @relation(fields: [petugasId], references: [id])
+  posko             Posko            @relation(fields: [poskoId], references: [id], onDelete: Cascade)
+
+  @@index([poskoId])
+  @@index([kartuKeluargaId])
+  @@index([petugasId])
+  @@index([tanggalDistribusi])
+  @@map("distribusi_bantuan")
+}
+
+model InventoriLogistik {
+  id              String          @id @default(uuid())
+  poskoId         String          @map("posko_id")
+  namaBarang      String          @map("nama_barang") @db.VarChar(255)
+  satuan          String          @db.VarChar(50)
+  stokSaatIni     Int             @map("stok_saat_ini")
+  stokMaksimum    Int             @map("stok_maksimum")
+  kebutuhanHarian Int             @map("kebutuhan_harian")
+  status          StatusInventori @default(AMAN)
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+  posko           Posko           @relation(fields: [poskoId], references: [id], onDelete: Cascade)
+
+  @@index([poskoId])
+  @@map("inventori_logistik")
+}
+
+model LogAktivitas {
+  id            String        @id @default(uuid())
+  userId        String        @map("user_id")
+  tipe          TipeAktivitas
+  deskripsi     String
+  referensiId   String?       @map("referensi_id")
+  referensiTipe String?       @map("referensi_tipe") @db.VarChar(50)
+  createdAt     DateTime      @default(now()) @map("created_at")
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tipe, createdAt])
+  @@map("log_aktivitas")
+}
 
 enum Role {
   SUPER_ADMIN
@@ -107,167 +268,15 @@ enum TipeAktivitas {
   IMPORT
 }
 
+enum StatusKesehatan {
+  SEHAT
+  DALAM_PENANGANAN
+  SAKIT
+  DARURAT
+}
+
 enum StatusInventori {
   AMAN
   MENIPIS
   KRITIS
-}
-
-// === MODELS ===
-
-model User {
-  id            String             @id @default(uuid())
-  email         String             @unique @db.VarChar(255)
-  passwordHash  String             @map("password_hash") @db.VarChar(255)
-  namaLengkap   String             @map("nama_lengkap") @db.VarChar(255)
-  role          Role
-  status        StatusUser         @default(AKTIF)
-  poskoId       String?            @map("posko_id")
-  fotoUrl       String?            @map("foto_url") @db.Text
-  idRelawan     String?            @unique @map("id_relawan") @db.VarChar(20)
-  keahlian      String?            @db.VarChar(255)
-  createdAt     DateTime           @default(now()) @map("created_at")
-  updatedAt     DateTime           @updatedAt @map("updated_at")
-
-  posko         Posko?             @relation(fields: [poskoId], references: [id], onDelete: SetNull)
-  keluarga      KartuKeluarga[]    @relation("CreatedBy")
-  distribusi    DistribusiBantuan[]
-  logAktivitas  LogAktivitas[]
-
-  @@map("users")
-}
-
-model EventBencana {
-  id             String          @id @default(uuid())
-  nama           String          @db.VarChar(255)
-  tipe           TipeBencana
-  status         StatusBencana
-  lokasi         String          @db.VarChar(500)
-  tanggalMulai   DateTime        @map("tanggal_mulai")
-  tanggalSelesai DateTime?       @map("tanggal_selesai")
-  deskripsi      String?         @db.Text
-  createdAt      DateTime        @default(now()) @map("created_at")
-  updatedAt      DateTime        @updatedAt @map("updated_at")
-
-  posko          Posko[]
-  keluarga       KartuKeluarga[]
-
-  @@map("event_bencana")
-}
-
-model Posko {
-  id              String             @id @default(uuid())
-  nama            String             @db.VarChar(255)
-  tipe            TipePosko
-  alamat          String             @db.Text
-  eventBencanaId  String             @map("event_bencana_id")
-  jumlahPengungsi Int                @default(0) @map("jumlah_pengungsi")
-  status          StatusPosko
-  createdAt       DateTime           @default(now()) @map("created_at")
-  updatedAt       DateTime           @updatedAt @map("updated_at")
-
-  eventBencana    EventBencana       @relation(fields: [eventBencanaId], references: [id], onDelete: Cascade)
-  users           User[]
-  keluarga        KartuKeluarga[]
-  inventori       InventoriLogistik[]
-  distribusi      DistribusiBantuan[]
-
-  @@map("posko")
-}
-
-model KartuKeluarga {
-  id                 String             @id @default(uuid())
-  nomorKk            String             @unique @map("nomor_kk") @db.VarChar(16)
-  namaKepalaKeluarga String             @map("nama_kepala_keluarga") @db.VarChar(255)
-  nikKepalaKeluarga  String             @unique @map("nik_kepala_keluarga") @db.VarChar(16)
-  alamat             String             @db.Text
-  rt                 String             @db.VarChar(5)
-  rw                 String             @db.VarChar(5)
-  kelurahan          String             @db.VarChar(100)
-  kecamatan          String             @db.VarChar(100)
-  kabupaten          String             @db.VarChar(100)
-  zonaRisiko         ZonaRisiko         @map("zona_risiko")
-  statusHunian       StatusHunian       @map("status_hunian")
-  statusVerifikasi   StatusVerifikasi   @default(MENUNGGU) @map("status_verifikasi")
-  qrCodeData         String             @unique @map("qr_code_data") @db.VarChar(50)
-  poskoId            String?            @map("posko_id")
-  eventBencanaId     String             @map("event_bencana_id")
-  createdById        String             @map("created_by_id")
-  createdAt          DateTime           @default(now()) @map("created_at")
-  updatedAt          DateTime           @updatedAt @map("updated_at")
-
-  posko              Posko?             @relation(fields: [poskoId], references: [id], onDelete: SetNull)
-  eventBencana       EventBencana       @relation(fields: [eventBencanaId], references: [id], onDelete: Cascade)
-  createdBy          User               @relation("CreatedBy", fields: [createdById], references: [id])
-  anggota            AnggotaKeluarga[]
-  distribusi         DistribusiBantuan[]
-
-  @@map("kartu_keluarga")
-}
-
-model AnggotaKeluarga {
-  id               String          @id @default(uuid())
-  kartuKeluargaId  String          @map("kartu_keluarga_id")
-  nik              String          @db.VarChar(16)
-  nama             String          @db.VarChar(255)
-  hubungan         HubunganKeluarga
-  jenisKelamin     JenisKelamin    @map("jenis_kelamin")
-  tanggalLahir     DateTime        @map("tanggal_lahir") @db.Date
-  kategoriRentan   KategoriRentan? @map("kategori_rentan")
-  kondisiKesehatan String?         @map("kondisi_kesehatan") @db.Text
-  createdAt        DateTime        @default(now()) @map("created_at")
-  updatedAt        DateTime        @updatedAt @map("updated_at")
-
-  kartuKeluarga    KartuKeluarga   @relation(fields: [kartuKeluargaId], references: [id], onDelete: Cascade)
-
-  @@map("anggota_keluarga")
-}
-
-model DistribusiBantuan {
-  id                String           @id @default(uuid())
-  kartuKeluargaId   String           @map("kartu_keluarga_id")
-  poskoId           String           @map("posko_id")
-  jenisBantuan      String           @map("jenis_bantuan") @db.VarChar(255)
-  kuantitas         String           @db.VarChar(50)
-  status            StatusDistribusi @default(TERSALURKAN)
-  petugasId         String           @map("petugas_id")
-  catatan           String?          @db.Text
-  tanggalDistribusi DateTime         @default(now()) @map("tanggal_distribusi")
-  createdAt         DateTime         @default(now()) @map("created_at")
-
-  kartuKeluarga     KartuKeluarga    @relation(fields: [kartuKeluargaId], references: [id], onDelete: Cascade)
-  posko             Posko            @relation(fields: [poskoId], references: [id], onDelete: Cascade)
-  petugas           User             @relation(fields: [petugasId], references: [id])
-
-  @@map("distribusi_bantuan")
-}
-
-model InventoriLogistik {
-  id              String      @id @default(uuid())
-  poskoId         String      @map("posko_id")
-  namaBarang      String      @map("nama_barang") @db.VarChar(255)
-  satuan          String      @db.VarChar(50)
-  stokSaatIni     Int         @map("stok_saat_ini")
-  stokMaksimum    Int         @map("stok_maksimum")
-  kebutuhanHarian Int         @map("kebutuhan_harian")
-  status          StatusInventori  @default(AMAN)
-  updatedAt       DateTime    @updatedAt @map("updated_at")
-
-  posko           Posko       @relation(fields: [poskoId], references: [id], onDelete: Cascade)
-
-  @@map("inventori_logistik")
-}
-
-model LogAktivitas {
-  id            String        @id @default(uuid())
-  userId        String        @map("user_id")
-  tipe          TipeAktivitas
-  deskripsi     String        @db.Text
-  referensiId   String?       @map("referensi_id")
-  referensiTipe String?       @map("referensi_tipe") @db.VarChar(50)
-  createdAt     DateTime      @default(now()) @map("created_at")
-
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("log_aktivitas")
 }

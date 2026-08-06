@@ -119,7 +119,8 @@ export async function PUT(
       kabupaten,
       zonaRisiko,
       statusHunian,
-      statusVerifikasi
+      statusVerifikasi,
+      poskoId
     } = body;
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -137,7 +138,8 @@ export async function PUT(
           kabupaten: kabupaten !== undefined ? kabupaten : undefined,
           zonaRisiko: zonaRisiko !== undefined ? zonaRisiko : undefined,
           statusHunian: statusHunian !== undefined ? statusHunian : undefined,
-          statusVerifikasi: statusVerifikasi !== undefined ? statusVerifikasi : undefined
+          statusVerifikasi: statusVerifikasi !== undefined ? statusVerifikasi : undefined,
+          poskoId: poskoId !== undefined ? (poskoId || null) : undefined
         }
       });
 

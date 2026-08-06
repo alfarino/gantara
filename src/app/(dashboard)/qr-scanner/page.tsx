@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
 import { resilientFetch } from '@/lib/resilientFetch';
+import { useAuth } from '@/hooks/useAuth';
 
 interface AnggotaKK {
   id: string;
@@ -13,6 +14,8 @@ interface AnggotaKK {
   jenisKelamin: string;
   tanggalLahir: string;
   kategoriRentan: string | null;
+  statusKesehatan: 'SEHAT' | 'DALAM_PENANGANAN' | 'SAKIT' | 'DARURAT';
+  kondisiKesehatan: string | null;
 }
 
 interface Distribusi {
@@ -22,6 +25,11 @@ interface Distribusi {
   tanggalDistribusi: string;
   petugas: string;
   posko: string;
+}
+
+interface PoskoOption {
+  id: string;
+  nama: string;
 }
 
 interface KKProfile {
@@ -43,6 +51,7 @@ interface KKProfile {
 }
 
 export default function QrScannerPage() {
+  const { user } = useAuth();
   const [mode, setMode] = useState<'scanner' | 'result'>('scanner');
   const [isScanning, setIsScanning] = useState(false);
   const [manualCode, setManualCode] = useState('');
@@ -58,13 +67,47 @@ export default function QrScannerPage() {
   const [isSavingDist, setIsSavingDist] = useState(false);
   const [distSuccess, setDistSuccess] = useState('');
 
+  // Health Status inline update state
+  const [editingHealthMemberId, setEditingHealthMemberId] = useState<string | null>(null);
+  const [healthStatusSelect, setHealthStatusSelect] = useState<'SEHAT' | 'DALAM_PENANGANAN' | 'SAKIT' | 'DARURAT'>('SEHAT');
+  const [healthNoteInput, setHealthNoteInput] = useState('');
+  const [isSavingHealth, setIsSavingHealth] = useState(false);
+  const [healthMsg, setHealthMsg] = useState('');
+
+  // Posko change state
+  const [poskoOptions, setPoskoOptions] = useState<PoskoOption[]>([]);
+  const [isEditingPosko, setIsEditingPosko] = useState(false);
+  const [selectedPoskoId, setSelectedPoskoId] = useState('');
+  const [isSavingPosko, setIsSavingPosko] = useState(false);
+  const [poskoMsg, setPoskoMsg] = useState('');
+
   // Camera scanner
   const scannerRef = useRef<any>(null);
   const scannerContainerId = 'qr-scanner-container';
 
+  // Load Posko list for dropdown if user is SuperAdmin or Kepala Posko
+  useEffect(() => {
+    async function fetchPoskos() {
+      try {
+        const res = await fetch('/api/posko');
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) {
+          setPoskoOptions(data.data.map((p: any) => ({ id: p.id, nama: p.nama })));
+        }
+      } catch (err) {
+        console.error('Failed to load posko list:', err);
+      }
+    }
+    if (user?.role === 'SUPER_ADMIN' || user?.role === 'KEPALA_POSKO') {
+      fetchPoskos();
+    }
+  }, [user]);
+
   const lookupQrCode = useCallback(async (code: string) => {
     setIsSearching(true);
     setErrorMsg('');
+    setHealthMsg('');
+    setPoskoMsg('');
     setKkProfile(null);
 
     try {
@@ -73,6 +116,7 @@ export default function QrScannerPage() {
 
       if (data.success) {
         setKkProfile(data.data);
+        setSelectedPoskoId(data.data.posko?.id || '');
         setMode('result');
       } else {
         const msg = data.error?.message || data.error || 'QR Code tidak ditemukan.';
@@ -85,13 +129,33 @@ export default function QrScannerPage() {
     }
   }, []);
 
+  // Helper to safely stop and clear html5-qrcode scanner without throwing unmount errors
+  const stopAndClearScanner = async (scanner: any) => {
+    if (!scanner) return;
+    try {
+      if (scanner.isScanning) {
+        await scanner.stop();
+      }
+    } catch {
+      // Ignore if scanner is already stopped or paused
+    }
+    try {
+      if (typeof scanner.clear === 'function') {
+        scanner.clear();
+      }
+    } catch {
+      // Ignore clear error
+    }
+  };
+
   const startScanner = useCallback(async () => {
     try {
-      // Dynamically import html5-qrcode only on client
       const { Html5Qrcode } = await import('html5-qrcode');
 
       if (scannerRef.current) {
-        try { await scannerRef.current.stop(); } catch { /* ignore */ }
+        const oldScanner = scannerRef.current;
+        scannerRef.current = null;
+        await stopAndClearScanner(oldScanner);
       }
 
       const scanner = new Html5Qrcode(scannerContainerId);
@@ -101,14 +165,13 @@ export default function QrScannerPage() {
         { facingMode: 'environment' },
         { fps: 10, qrbox: { width: 250, height: 250 } },
         (decodedText: string) => {
-          // QR code detected
-          scanner.stop().catch(() => {});
+          const currentScanner = scannerRef.current || scanner;
+          scannerRef.current = null;
           setIsScanning(false);
+          stopAndClearScanner(currentScanner);
           lookupQrCode(decodedText);
         },
-        () => {
-          // Scan error (no QR found in frame), ignore silently
-        }
+        () => {}
       );
       setIsScanning(true);
     } catch (err: any) {
@@ -118,18 +181,20 @@ export default function QrScannerPage() {
   }, [lookupQrCode]);
 
   const stopScanner = useCallback(async () => {
-    if (scannerRef.current) {
-      try { await scannerRef.current.stop(); } catch { /* ignore */ }
-      scannerRef.current = null;
-    }
+    const currentScanner = scannerRef.current;
+    scannerRef.current = null;
     setIsScanning(false);
+    if (currentScanner) {
+      await stopAndClearScanner(currentScanner);
+    }
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
+      const currentScanner = scannerRef.current;
+      scannerRef.current = null;
+      if (currentScanner) {
+        stopAndClearScanner(currentScanner);
       }
     };
   }, []);
@@ -166,13 +231,12 @@ export default function QrScannerPage() {
         setDistKuantitas('');
         setDistCatatan('');
         setShowDistForm(false);
-        // Re-fetch profile to update distribution history
         lookupQrCode(kkProfile.qrCodeData);
       } else {
         setErrorMsg(data.error || 'Gagal mencatat distribusi.');
       }
     } catch (err: any) {
-      if (err.message.includes('antrean offline')) {
+      if (err.message?.includes('antrean offline')) {
         setDistSuccess('Koneksi terputus. Transaksi disimpan dalam antrean offline dan akan dikirim otomatis saat koneksi pulih.');
       } else {
         setErrorMsg('Gagal mengirim data distribusi.');
@@ -182,12 +246,71 @@ export default function QrScannerPage() {
     }
   };
 
+  // Handle member health status update
+  const handleSaveHealth = async (memberId: string) => {
+    if (!kkProfile) return;
+    setIsSavingHealth(true);
+    setHealthMsg('');
+    try {
+      const res = await fetch(`/api/keluarga/${kkProfile.id}/anggota/${memberId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          statusKesehatan: healthStatusSelect,
+          kondisiKesehatan: healthNoteInput,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setHealthMsg('Status kesehatan berhasil diperbarui!');
+        setEditingHealthMemberId(null);
+        lookupQrCode(kkProfile.qrCodeData);
+      } else {
+        setErrorMsg(data.message || 'Gagal memperbarui status kesehatan.');
+      }
+    } catch {
+      setErrorMsg('Gagal terhubung ke server.');
+    } finally {
+      setIsSavingHealth(false);
+    }
+  };
+
+  // Handle Posko assignment change by SuperAdmin / Kepala Posko
+  const handleSavePosko = async () => {
+    if (!kkProfile) return;
+    setIsSavingPosko(true);
+    setPoskoMsg('');
+    try {
+      const res = await fetch(`/api/keluarga/${kkProfile.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ poskoId: selectedPoskoId || null }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPoskoMsg('Posisi Posko berhasil diperbarui!');
+        setIsEditingPosko(false);
+        lookupQrCode(kkProfile.qrCodeData);
+      } else {
+        setErrorMsg(data.error || 'Gagal memperbarui posisi posko.');
+      }
+    } catch {
+      setErrorMsg('Gagal memperbarui posisi posko.');
+    } finally {
+      setIsSavingPosko(false);
+    }
+  };
+
   const handleScanAgain = () => {
     setMode('scanner');
     setKkProfile(null);
     setErrorMsg('');
     setDistSuccess('');
+    setHealthMsg('');
+    setPoskoMsg('');
     setShowDistForm(false);
+    setIsEditingPosko(false);
+    setEditingHealthMemberId(null);
   };
 
   const riskBadge = (zona: string) => {
@@ -201,7 +324,7 @@ export default function QrScannerPage() {
       <div>
         <h1 className="text-2xl font-bold font-heading text-gray-900">QR Scanner Kamera</h1>
         <p className="text-sm text-gray-500">
-          Scan QR Code warga terdampak untuk memverifikasi profil dan menyalurkan bantuan.
+          Scan QR Code warga terdampak untuk memverifikasi profil, memperbarui status kesehatan, dan menyalurkan bantuan.
         </p>
       </div>
 
@@ -210,23 +333,16 @@ export default function QrScannerPage() {
           {/* Scanner Area */}
           <Card className="p-0 overflow-hidden">
             <div className="relative bg-gray-900 flex items-center justify-center" style={{ minHeight: 340 }}>
-              {/* Camera viewfinder container */}
               <div id={scannerContainerId} className="w-full max-w-[340px]" />
 
               {!isScanning && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-gray-900/80">
-                  {/* Corner brackets decoration */}
                   <div className="relative w-[260px] h-[260px]">
-                    {/* Top-left */}
                     <div className="absolute top-0 left-0 w-10 h-10 border-t-4 border-l-4 border-success rounded-tl-lg" />
-                    {/* Top-right */}
                     <div className="absolute top-0 right-0 w-10 h-10 border-t-4 border-r-4 border-success rounded-tr-lg" />
-                    {/* Bottom-left */}
                     <div className="absolute bottom-0 left-0 w-10 h-10 border-b-4 border-l-4 border-success rounded-bl-lg" />
-                    {/* Bottom-right */}
                     <div className="absolute bottom-0 right-0 w-10 h-10 border-b-4 border-r-4 border-success rounded-br-lg" />
 
-                    {/* Laser line */}
                     <div className="absolute left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-red-500 to-transparent animate-bounce" style={{ top: '50%' }} />
 
                     <div className="absolute inset-0 flex items-center justify-center">
@@ -279,7 +395,6 @@ export default function QrScannerPage() {
             </div>
           </Card>
 
-          {/* Error */}
           {errorMsg && (
             <Card className="p-4 border-l-4 border-danger bg-danger/5">
               <div className="flex items-center gap-3">
@@ -294,7 +409,6 @@ export default function QrScannerPage() {
       {/* ===== RESULT MODE ===== */}
       {mode === 'result' && kkProfile && (
         <>
-          {/* Success Banner */}
           <Card className="p-4 border-l-4 border-success bg-success/5">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-success/10 text-success flex items-center justify-center shrink-0">
@@ -307,12 +421,29 @@ export default function QrScannerPage() {
             </div>
           </Card>
 
-          {/* Distribution Success */}
           {distSuccess && (
             <Card className="p-4 border-l-4 border-primary bg-primary/5">
               <div className="flex items-center gap-3">
                 <span className="material-symbols-outlined text-primary">check_circle</span>
                 <p className="text-sm text-primary font-semibold">{distSuccess}</p>
+              </div>
+            </Card>
+          )}
+
+          {healthMsg && (
+            <Card className="p-4 border-l-4 border-success bg-success/5">
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-success">medical_services</span>
+                <p className="text-sm text-success font-semibold">{healthMsg}</p>
+              </div>
+            </Card>
+          )}
+
+          {poskoMsg && (
+            <Card className="p-4 border-l-4 border-primary bg-primary/5">
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-primary">location_on</span>
+                <p className="text-sm text-primary font-semibold">{poskoMsg}</p>
               </div>
             </Card>
           )}
@@ -342,8 +473,42 @@ export default function QrScannerPage() {
                 <p className="text-gray-900">{kkProfile.kelurahan}</p>
               </div>
               <div>
-                <p className="text-xs text-gray-400 font-semibold uppercase">Posko Terdaftar</p>
-                <p className="text-gray-900">{kkProfile.posko?.nama || '—'}</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-gray-400 font-semibold uppercase">Posko Terdaftar</p>
+                  {(user?.role === 'SUPER_ADMIN' || user?.role === 'KEPALA_POSKO') && !isEditingPosko && (
+                    <button
+                      onClick={() => setIsEditingPosko(true)}
+                      className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
+                    >
+                      <span className="material-symbols-outlined text-xs">edit</span>
+                      Ubah Posko
+                    </button>
+                  )}
+                </div>
+                {!isEditingPosko ? (
+                  <p className="text-gray-900 font-semibold">{kkProfile.posko?.nama || '— (Belum Ditentukan)'}</p>
+                ) : (
+                  <div className="mt-1.5 space-y-2">
+                    <select
+                      className="w-full h-10 px-3 border border-gray-200 rounded-btn text-xs bg-white outline-none focus:ring-2 focus:ring-primary"
+                      value={selectedPoskoId}
+                      onChange={(e) => setSelectedPoskoId(e.target.value)}
+                    >
+                      <option value="">-- Tanpa Posko / Belum Ditentukan --</option>
+                      {poskoOptions.map((p) => (
+                        <option key={p.id} value={p.id}>{p.nama}</option>
+                      ))}
+                    </select>
+                    <div className="flex gap-2">
+                      <Button variant="secondary" className="h-8 min-h-0 text-xs py-1" onClick={() => setIsEditingPosko(false)}>
+                        Batal
+                      </Button>
+                      <Button variant="primary" className="h-8 min-h-0 text-xs py-1" onClick={handleSavePosko} disabled={isSavingPosko}>
+                        {isSavingPosko ? 'Menyimpan...' : 'Simpan Posko'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
               <div>
                 <p className="text-xs text-gray-400 font-semibold uppercase">Jumlah Anggota</p>
@@ -363,25 +528,157 @@ export default function QrScannerPage() {
               </div>
             </div>
 
-            {/* Anggota Keluarga */}
+            {/* Anggota Keluarga & Status Kesehatan */}
             {kkProfile.anggota.length > 0 && (
-              <div className="border-t border-gray-100 pt-4">
-                <h3 className="font-heading font-bold text-sm text-gray-900 mb-3">Anggota Keluarga</h3>
-                <div className="space-y-2">
+              <div className="border-t border-gray-100 pt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-heading font-bold text-sm text-gray-900">
+                    Anggota Keluarga & Status Kesehatan
+                  </h3>
+                  <span className="text-xs text-gray-400">Klik pensil untuk update kesehatan</span>
+                </div>
+                <div className="space-y-2.5">
                   {kkProfile.anggota.map((a) => (
-                    <div key={a.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-btn text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-gray-400 text-base">
-                          {a.jenisKelamin === 'LAKI_LAKI' ? 'man' : 'woman'}
-                        </span>
-                        <span className="font-semibold text-gray-900">{a.nama}</span>
+                    <div key={a.id} className="p-3 bg-gray-50 rounded-btn space-y-2 border border-gray-100">
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-gray-400 text-base">
+                            {a.jenisKelamin === 'LAKI_LAKI' ? 'man' : 'woman'}
+                          </span>
+                          <span className="font-semibold text-gray-900">{a.nama}</span>
+                          <span className="text-xs text-gray-500 font-normal">({a.hubungan.replace(/_/g, ' ')})</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {a.kategoriRentan && a.kategoriRentan !== 'TIDAK_ADA' && (
+                            <Badge variant="warning">{a.kategoriRentan}</Badge>
+                          )}
+                          {editingHealthMemberId !== a.id && (
+                            <button
+                              onClick={() => {
+                                setEditingHealthMemberId(a.id);
+                                setHealthStatusSelect(a.statusKesehatan || 'SEHAT');
+                                setHealthNoteInput(a.kondisiKesehatan || '');
+                              }}
+                              className="text-gray-400 hover:text-primary transition-colors p-1"
+                              title="Update Status Kesehatan"
+                            >
+                              <span className="material-symbols-outlined text-base">edit_note</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-500">{a.hubungan.replace(/_/g, ' ')}</span>
-                        {a.kategoriRentan && a.kategoriRentan !== 'TIDAK_ADA' && (
-                          <Badge variant="warning">{a.kategoriRentan}</Badge>
-                        )}
-                      </div>
+
+                      {/* Display Status Kesehatan (4 Kategori + Catatan Detail) */}
+                      {editingHealthMemberId !== a.id ? (
+                        <div className="flex flex-wrap items-center gap-2 text-xs pt-1">
+                          <Badge
+                            variant={
+                              a.statusKesehatan === 'SEHAT'
+                                ? 'success'
+                                : a.statusKesehatan === 'DALAM_PENANGANAN'
+                                ? 'warning'
+                                : 'danger'
+                            }
+                          >
+                            {a.statusKesehatan === 'SEHAT'
+                              ? '💚 SEHAT'
+                              : a.statusKesehatan === 'DALAM_PENANGANAN'
+                              ? '🟡 DALAM PENANGANAN'
+                              : a.statusKesehatan === 'SAKIT'
+                              ? '🔴 SAKIT / LUKA-LUKA'
+                              : '🚨 DARURAT'}
+                          </Badge>
+                          {a.kondisiKesehatan && (
+                            <span className="text-gray-600 font-medium">
+                              • {a.kondisiKesehatan}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        /* Inline Health Editor (4 Status + Text Catatan) */
+                        <div className="pt-2 border-t border-gray-200 space-y-3 bg-white p-2.5 rounded-btn">
+                          <label className="text-xs font-bold text-gray-800 block">
+                            Pilih Status Kesehatan ({a.nama}):
+                          </label>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <button
+                              type="button"
+                              onClick={() => setHealthStatusSelect('SEHAT')}
+                              className={`p-2 rounded-btn font-semibold border text-left flex items-center gap-1.5 transition-all ${
+                                healthStatusSelect === 'SEHAT'
+                                  ? 'border-success bg-success/10 text-success ring-2 ring-success/20'
+                                  : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              <span>💚</span> Sehat
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setHealthStatusSelect('DALAM_PENANGANAN')}
+                              className={`p-2 rounded-btn font-semibold border text-left flex items-center gap-1.5 transition-all ${
+                                healthStatusSelect === 'DALAM_PENANGANAN'
+                                  ? 'border-warning bg-warning/10 text-warning ring-2 ring-warning/20'
+                                  : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              <span>🟡</span> Dalam Penanganan
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setHealthStatusSelect('SAKIT')}
+                              className={`p-2 rounded-btn font-semibold border text-left flex items-center gap-1.5 transition-all ${
+                                healthStatusSelect === 'SAKIT'
+                                  ? 'border-danger bg-danger/10 text-danger ring-2 ring-danger/20'
+                                  : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              <span>🔴</span> Sakit / Luka-Luka
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setHealthStatusSelect('DARURAT')}
+                              className={`p-2 rounded-btn font-semibold border text-left flex items-center gap-1.5 transition-all ${
+                                healthStatusSelect === 'DARURAT'
+                                  ? 'border-red-600 bg-red-600/10 text-red-600 ring-2 ring-red-600/20'
+                                  : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              <span>🚨</span> Darurat
+                            </button>
+                          </div>
+
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">
+                              Catatan Detail Kesehatan (Opsional):
+                            </label>
+                            <textarea
+                              className="w-full text-xs p-2 border border-gray-300 rounded-btn focus:ring-2 focus:ring-primary outline-none"
+                              placeholder="Contoh: Pusing demam 38C, Butuh parasetamol, Luka memar di kaki..."
+                              value={healthNoteInput}
+                              onChange={(e) => setHealthNoteInput(e.target.value)}
+                              rows={2}
+                            />
+                          </div>
+
+                          <div className="flex justify-end gap-2 pt-1">
+                            <Button
+                              variant="secondary"
+                              className="h-7 min-h-0 text-xs py-1"
+                              onClick={() => setEditingHealthMemberId(null)}
+                            >
+                              Batal
+                            </Button>
+                            <Button
+                              variant="primary"
+                              className="h-7 min-h-0 text-xs py-1"
+                              onClick={() => handleSaveHealth(a.id)}
+                              disabled={isSavingHealth}
+                            >
+                              {isSavingHealth ? 'Menyimpan...' : 'Simpan Status Kesehatan'}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -484,7 +781,6 @@ export default function QrScannerPage() {
             </Card>
           )}
 
-          {/* Error */}
           {errorMsg && (
             <Card className="p-4 border-l-4 border-danger bg-danger/5">
               <div className="flex items-center gap-3">
