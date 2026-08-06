@@ -12,7 +12,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .material-symbols-outlined {
-  font-family: 'Material Symbols Outlined';
+  font-family: 'Material Symbols Outlined', sans-serif;
   font-weight: normal;
   font-style: normal;
   font-size: 24px;
@@ -24,6 +24,17 @@ h1, h2, h3, h4, h5, h6 {
   word-wrap: normal;
   direction: ltr;
   -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  max-width: 1.5em;
+  max-height: 1.5em;
+  vertical-align: middle;
+  user-select: none;
+}
+
+/* Hide native Edge / IE password reveal button to avoid duplicate eye icons */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
 }
 
 /* Custom Scrollbar */

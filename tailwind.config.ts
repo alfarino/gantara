@@ -37,8 +37,8 @@ const config: Config = {
         blueLight: "#E8F0FE",
       },
       fontFamily: {
-        sans: ["Inter", "sans-serif"],
-        heading: ["Plus Jakarta Sans", "sans-serif"],
+        sans: ["Inter", "var(--font-geist-sans)", "system-ui", "-apple-system", "BlinkMacSystemFont", "'Segoe UI'", "Roboto", "sans-serif"],
+        heading: ["Plus Jakarta Sans", "Inter", "var(--font-geist-sans)", "system-ui", "-apple-system", "BlinkMacSystemFont", "'Segoe UI'", "Roboto", "sans-serif"],
       },
       spacing: {
         sidebar: "260px",
