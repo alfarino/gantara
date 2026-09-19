@@ -4,12 +4,16 @@ import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { generateImportTemplate } from '@/lib/export';
 
 interface PreviewRow {
   row: number;
   nik: string;
   nomor_kk: string;
   nama: string;
+  hubungan?: string;
+  jenis_kelamin?: string;
+  kategori_rentan?: string;
   alamat: string;
   kelurahan: string;
   zona_risiko: string;
@@ -22,6 +26,7 @@ interface ImportResult {
   totalRows: number;
   validRows: number;
   errorRows: number;
+  totalKkCount?: number;
   preview: PreviewRow[];
 }
 
@@ -31,7 +36,7 @@ export default function ImportKeluargaPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
-  const [confirmSuccess, setConfirmSuccess] = useState<{ insertedCount: number; message: string } | null>(null);
+  const [confirmSuccess, setConfirmSuccess] = useState<{ message: string } | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -129,7 +134,6 @@ export default function ImportKeluargaPage() {
 
       if (data.success) {
         setConfirmSuccess({
-          insertedCount: data.data.insertedCount,
           message: data.message,
         });
         setImportResult(null);
@@ -145,7 +149,7 @@ export default function ImportKeluargaPage() {
   };
 
   const handleDownloadTemplate = () => {
-    window.open('/api/keluarga/import/template', '_blank');
+    generateImportTemplate();
   };
 
   const handleReset = () => {
@@ -158,13 +162,24 @@ export default function ImportKeluargaPage() {
     }
   };
 
+  const formatHubunganLabel = (rel?: string) => {
+    switch (rel) {
+      case 'KEPALA_KELUARGA': return 'Kepala Keluarga';
+      case 'ISTRI': return 'Istri';
+      case 'ANAK': return 'Anak';
+      case 'ORANG_TUA': return 'Orang Tua';
+      case 'LAINNYA': return 'Lainnya';
+      default: return rel || 'Kepala Keluarga';
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold font-heading text-gray-900">Import Data Keluarga Massal</h1>
-          <p className="text-sm text-gray-500">Unggah berkas Excel (.xlsx) untuk menambahkan data KK secara massal.</p>
+          <p className="text-sm text-gray-500">Unggah berkas Excel (.xlsx) untuk mengimpor KK dan seluruh anggota keluarga sekaligus.</p>
         </div>
         <div className="flex gap-3">
           <Link href="/keluarga">
@@ -300,10 +315,10 @@ export default function ImportKeluargaPage() {
               {importResult.errorRows > 0 ? 'warning' : 'info'}
             </span>
             <p className="text-sm font-semibold text-gray-900">
-              {importResult.totalRows} Baris Data Ditemukan: {' '}
-              <span className="text-success">{importResult.validRows} Data Valid</span>
+              {importResult.totalRows} Baris Ditemukan ({importResult.totalKkCount || '—'} Kartu Keluarga): {' '}
+              <span className="text-success">{importResult.validRows} Baris Valid</span>
               {importResult.errorRows > 0 && (
-                <>, <span className="text-danger">{importResult.errorRows} Data Eror</span></>
+                <>, <span className="text-danger">{importResult.errorRows} Baris Eror</span></>
               )}
             </p>
           </div>
@@ -313,20 +328,22 @@ export default function ImportKeluargaPage() {
       {/* Preview Table */}
       {importResult && importResult.preview.length > 0 && (
         <Card className="overflow-hidden">
-          <div className="p-4 border-b border-gray-100">
-            <h2 className="font-heading font-bold text-gray-900">Pratinjau Data Import</h2>
-            <p className="text-xs text-gray-500 mt-1">Baris berstatus eror (merah) tidak akan dimasukkan ke database.</p>
+          <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+            <div>
+              <h2 className="font-heading font-bold text-gray-900">Pratinjau Data Import</h2>
+              <p className="text-xs text-gray-500 mt-1">Baris berstatus eror (merah) tidak akan dimasukkan ke database.</p>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   <th className="py-3 px-4">Baris</th>
+                  <th className="py-3 px-4">Nomor KK</th>
                   <th className="py-3 px-4">NIK</th>
-                  <th className="py-3 px-4">Nama Kepala Keluarga</th>
-                  <th className="py-3 px-4">Alamat</th>
-                  <th className="py-3 px-4">Kelurahan</th>
-                  <th className="py-3 px-4">Zona</th>
+                  <th className="py-3 px-4">Nama Anggota</th>
+                  <th className="py-3 px-4">Hubungan</th>
+                  <th className="py-3 px-4">Alamat / Kelurahan</th>
                   <th className="py-3 px-4">Status</th>
                 </tr>
               </thead>
@@ -343,6 +360,7 @@ export default function ImportKeluargaPage() {
                     `}
                   >
                     <td className="py-3 px-4 text-gray-500 font-mono text-xs">{row.row}</td>
+                    <td className="py-3 px-4 font-mono text-xs text-gray-900 font-semibold">{row.nomor_kk}</td>
                     <td className="py-3 px-4 font-mono text-xs text-gray-700">{row.nik}</td>
                     <td className="py-3 px-4">
                       <div>
@@ -352,17 +370,13 @@ export default function ImportKeluargaPage() {
                         )}
                       </div>
                     </td>
-                    <td className="py-3 px-4 text-gray-600 text-xs max-w-[200px] truncate">{row.alamat || '—'}</td>
-                    <td className="py-3 px-4 text-gray-600 text-xs">{row.kelurahan || '—'}</td>
                     <td className="py-3 px-4">
-                      {row.zona_risiko && (
-                        <Badge variant={
-                          row.zona_risiko === 'MERAH' ? 'danger' :
-                          row.zona_risiko === 'KUNING' ? 'warning' : 'success'
-                        }>
-                          {row.zona_risiko}
-                        </Badge>
-                      )}
+                      <Badge variant={row.hubungan === 'KEPALA_KELUARGA' ? 'primary' : 'neutral'}>
+                        {formatHubunganLabel(row.hubungan)}
+                      </Badge>
+                    </td>
+                    <td className="py-3 px-4 text-gray-600 text-xs max-w-[200px] truncate">
+                      {row.alamat} ({row.kelurahan || '—'})
                     </td>
                     <td className="py-3 px-4">
                       <Badge variant={row.status === 'VALID' ? 'success' : 'danger'}>

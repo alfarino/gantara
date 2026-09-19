@@ -6,6 +6,10 @@ interface ImportRow {
   nomor_kk: string;
   nik: string;
   nama: string;
+  hubungan: string;
+  jenis_kelamin?: string;
+  tanggal_lahir?: string;
+  kategori_rentan?: string;
   alamat: string;
   rt: string;
   rw: string;

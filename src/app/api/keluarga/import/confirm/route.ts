@@ -43,7 +43,6 @@ export async function POST(request: Request) {
     let targetEventId = eventBencanaId;
     let targetPoskoId = poskoId || user.poskoId || null;
 
-    // If no eventBencanaId provided, find the latest active event
     if (!targetEventId) {
       const latestEvent = await prisma.eventBencana.findFirst({
         where: { status: { in: ['KRITIS', 'SIAGA', 'WASPADA'] } },
@@ -60,58 +59,105 @@ export async function POST(request: Request) {
       }
     }
 
-    // Build batch insert payload
-    const recordsToInsert = validRows.map((row) => {
-      const randomSuffix = Math.random().toString(36).substring(2, 10).toUpperCase();
-      const qrCodeData = `PG-2026-${randomSuffix}`;
+    // Group valid rows by nomor_kk
+    const kkGroups = new Map<string, typeof validRows>();
+    for (const r of validRows) {
+      const existing = kkGroups.get(r.nomor_kk) || [];
+      existing.push(r);
+      kkGroups.set(r.nomor_kk, existing);
+    }
 
-      return {
-        nomorKk: row.nomor_kk,
-        namaKepalaKeluarga: row.nama,
-        nikKepalaKeluarga: row.nik,
-        alamat: row.alamat,
-        rt: row.rt,
-        rw: row.rw,
-        kelurahan: row.kelurahan,
-        kecamatan: row.kecamatan,
-        kabupaten: row.kabupaten,
-        zonaRisiko: row.zona_risiko as any,
-        statusHunian: row.status_hunian as any,
-        qrCodeData,
-        eventBencanaId: targetEventId,
-        poskoId: targetPoskoId,
-        createdById: user.id,
-      };
-    });
+    let insertedKkCount = 0;
+    let insertedAnggotaCount = 0;
 
-    // Use transaction to insert all valid rows in a single batch query
-    const result = await prisma.$transaction(async (tx) => {
-      const batchResult = await tx.kartuKeluarga.createMany({
-        data: recordsToInsert,
-      });
+    // Run creation in a Prisma transaction
+    await prisma.$transaction(async (tx) => {
+      for (const [nomorKk, rows] of kkGroups.entries()) {
+        // Find head of family row (or default to 1st row)
+        const headRow = rows.find((r) => r.hubungan === 'KEPALA_KELUARGA') || rows[0];
 
-      // Log the import activity
+        const randomSuffix = Math.random().toString(36).substring(2, 10).toUpperCase();
+        const qrCodeData = `PG-2026-${randomSuffix}`;
+
+        // Create KartuKeluarga
+        const kk = await tx.kartuKeluarga.create({
+          data: {
+            nomorKk,
+            namaKepalaKeluarga: headRow.nama,
+            nikKepalaKeluarga: headRow.nik,
+            alamat: headRow.alamat,
+            rt: headRow.rt,
+            rw: headRow.rw,
+            kelurahan: headRow.kelurahan,
+            kecamatan: headRow.kecamatan,
+            kabupaten: headRow.kabupaten,
+            zonaRisiko: headRow.zona_risiko as any,
+            statusHunian: headRow.status_hunian as any,
+            qrCodeData,
+            eventBencanaId: targetEventId,
+            poskoId: targetPoskoId,
+            createdById: user.id,
+          },
+        });
+
+        insertedKkCount++;
+
+        // Create all AnggotaKeluarga rows linked to this KK
+        const anggotaData = rows.map((r) => {
+          let tglLahir: Date;
+          if (r.tanggal_lahir && !isNaN(Date.parse(r.tanggal_lahir))) {
+            tglLahir = new Date(r.tanggal_lahir);
+          } else {
+            tglLahir = new Date('1990-01-01');
+          }
+
+          return {
+            kartuKeluargaId: kk.id,
+            nik: r.nik,
+            nama: r.nama,
+            hubungan: r.hubungan as any,
+            jenisKelamin: (r.jenis_kelamin || 'LAKI_LAKI') as any,
+            tanggalLahir: tglLahir,
+            kategoriRentan: (r.kategori_rentan || 'TIDAK_ADA') as any,
+          };
+        });
+
+        const anggotaResult = await tx.anggotaKeluarga.createMany({
+          data: anggotaData,
+        });
+
+        insertedAnggotaCount += anggotaResult.count;
+      }
+
+      // Increment jumlahPengungsi in Posko if assigned
+      if (targetPoskoId) {
+        await tx.posko.update({
+          where: { id: targetPoskoId },
+          data: { jumlahPengungsi: { increment: insertedAnggotaCount } },
+        });
+      }
+
+      // Log activity
       await tx.logAktivitas.create({
         data: {
           userId: user.id,
-          tipe: 'VERIFIKASI',
-          deskripsi: `Import massal ${batchResult.count} Kartu Keluarga dari file Excel`,
+          tipe: 'IMPORT',
+          deskripsi: `Import massal ${insertedKkCount} KK (${insertedAnggotaCount} Anggota Keluarga) dari file Excel`,
           referensiTipe: 'KARTU_KELUARGA',
         },
       });
-
-      return batchResult.count;
     });
 
-    // Clean up session after successful commit
+    // Clean up session
     deleteSession(importSessionId);
 
     return NextResponse.json({
       success: true,
       data: {
-        insertedCount: result,
+        insertedKkCount,
+        insertedAnggotaCount,
       },
-      message: `Berhasil mengimpor ${result} Kartu Keluarga dan membuat QR Code.`,
+      message: `Berhasil mengimpor ${insertedKkCount} Kartu Keluarga (${insertedAnggotaCount} Anggota Keluarga) dan membuat QR Code.`,
     });
   } catch (error: any) {
     console.error('Error confirming import:', error);
