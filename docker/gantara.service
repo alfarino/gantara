@@ -1,0 +1,26 @@
+[Unit]
+Description=GANTARA - Sistem Manajemen Relawan
+Documentation=https://github.com/alfarino/gantara
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# Sesuaikan path ini dengan lokasi folder docker/ di server kamu
+WorkingDirectory=/opt/gantara/docker
+
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+ExecStop=/usr/bin/docker compose down
+
+# Restart jika gagal
+Restart=on-failure
+RestartSec=10s
+
+# Timeout lebih lama karena build image bisa memakan waktu
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
